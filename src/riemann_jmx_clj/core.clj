@@ -5,6 +5,17 @@
             [clojure.pprint :refer (pprint)])
   (:gen-class))
 
+(defn retry-on-ioexception
+  [tries f & args]
+  (let [res (try {:value (apply f args)}
+                 (catch java.io.IOException e
+                   (if (= 0 tries)
+                     (throw e)
+                     {:exception e})))]
+    (if (:exception res)
+      (recur (dec tries) f args)
+      (:value res))))
+
 (defn- get-riemann-connection-helper
   [host port]
   (doto (riemann/tcp-client :host host :port port)
@@ -78,7 +89,8 @@
     (future
       (while true
         (try
-          (run-configuration munged)   
+          (retry-on-ioexception 1
+            (run-configuration munged))
           (catch Exception e
             (.printStackTrace e))
           (finally (Thread/sleep (* 1000 (-> yaml :riemann :interval)))))))))
